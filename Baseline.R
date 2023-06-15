@@ -7,6 +7,7 @@ library(ggplot2)
 library(tidyr)
 library(patchwork)
 library(plotly)
+library(googledrive)
 
 source("functions.R")
 #### Assumptions ####
@@ -35,15 +36,16 @@ sim_data <- create_data(T=90,
                         price_coefficient=-0.5,
                         high_price=2,
                         low_price=0.4, 
-                        price_granularity=1)
+                        price_granularity=1,
+                        sites=2)
 
 
 
-ggplot(sim_data[[5]])+geom_point(mapping=aes(y=quantity,x=prices))
+ggplot(sim_data[[5]])+geom_point(mapping=aes(y=quantity,x=prices, group=site_index, color=site_index))
 
 
-transactions <-       ggplot(sim_data[[5]],mapping=aes()) + geom_line(aes(day_index,quantity))
-prices_plot <-        ggplot(sim_data[[1]],mapping=aes()) + geom_line(aes(day_index, prices))
+transactions <-       ggplot(sim_data[[5]],mapping=aes()) + geom_line(aes(x=day_index,y=quantity, group=site_index, color=site_index))
+prices_plot <-        ggplot(sim_data[[1]],mapping=aes()) + geom_line(aes(x=day_index, y=prices, group=site_index, color=site_index))
 
 print(transactions /  prices_plot)
           
@@ -57,7 +59,7 @@ ols <- sim_data[[3]] %>%
 
 ols
 
-ols_elasticity <- ols$coefficients[2] * mean(df$prices) / mean(df$purchase_binary)
+ols_elasticity <- ols$coefficients[2] * mean(sim_data[[3]]$prices) / mean(sim_data[[3]]$purchase_binary)
 
 ## Model 2: Observe Purchase Binary, Logit Model
 
@@ -69,7 +71,7 @@ logit <- sim_data[[3]] %>%
 
 logit
 
-logit_elasticity <- logit$coefficients[2] * (1 - mean(df$purchase_binary))*mean(df$prices)
+logit_elasticity <- logit$coefficients[2] * (1 - mean(sim_data[[3]]$purchase_binary))*mean(sim_data[[3]]$prices)
 
 ## Model 3: Observe Total Quantity
 
@@ -80,57 +82,20 @@ quantity_model <- sim_data[[5]] %>%
 
 quantity_model
 
-quantity_elasticity <- quantity_model$coefficients[2] * mean(df_by_day$prices) / mean(df_by_day$quantity)
+quantity_elasticity <- quantity_model$coefficients[2] * mean(sim_data[[5]]$prices) / mean(sim_data[[5]]$quantity)
 
 #### Comparing Elasticities ####
 
-data.frame(true = true_elasticity, 
+data.frame(true = sim_data[[4]], 
            ols_binary = ols_elasticity,
            logit_binary = logit_elasticity,
            ols_quantity = quantity_elasticity)
 
 
-#### Comparing Estimated Demand Curves, and the Implied Profit Functions & Optimal Prices ####
-
-demand_curves <- data.frame(prices = seq(from = 0, to = 3, by = 0.01))
-
-demand_curves %<>%
-  mutate(ols = n *
-           (ols$coefficients[1] + ols$coefficients[2] * prices),
-         logit = n *
-           (exp(logit$coefficients[1] + logit$coefficients[2] * prices) / 
-              (1 + exp(logit$coefficients[1] + logit$coefficients[2] * prices)))) %>%
-          #total = quantity_model$coefficients[1]
-  gather(model, quantities, -prices)
-
-
-demand_plot <- ggplot(data = demand_curves, aes(x = quantities, y = prices, color = model)) + 
-  geom_line() + 
-  labs(x = 'Quantity', y = 'Price ($)', title = 'Panel A: Estimated Demand Curves') + 
-  geom_hline(yintercept = c(low_price, high_price), colour = "#2A73CC", linetype = "longdash") + 
-  theme(plot.title = element_text(face = "bold"))
-
-profit_curves <- demand_curves %>%
-  mutate(profit = quantities * prices)
-
-profit_curves %>%
-  group_by(model) %>%
-  filter(profit == max(profit))
-
-profit_plot <- ggplot(data = profit_curves, aes(x = prices, y = profit, color = model)) + 
-  geom_line() + 
-  labs(x = 'Price ($)', y = 'Profit ($)', title = 'Panel B: Implied Profit Functions') + 
-  geom_vline(xintercept = c(low_price, high_price), colour = "#2A73CC", linetype = "longdash") + 
-  theme(plot.title = element_text(face = "bold"))
-
-multiplot(demand_plot, profit_plot, cols = 2)
-
-options(repr.plot.width = 10, repr.plot.height = 6)
-
 #### Comparing Estimated Demand Curves, and the Implied Profit Functions & Optimal Prices ******WITH COMPETITOR**** ####
 
-demand_curves <- as.data.frame(expand.grid(seq(from = 1, to = 5, by = 0.01),
-                                           seq(from = 1, to = 5, by = 0.01))
+demand_curves <- as.data.frame(expand.grid(seq(from = 0, to = 5, by = 0.01),
+                                           seq(from = 0, to = 5, by = 0.01))
                               ) %>%
   dplyr::rename(prices=Var1,prices_c=Var2) %>%
   mutate(quantity = quantity_model$coefficients[1] + quantity_model$coefficients[2]*prices + quantity_model$coefficients[3]*prices_c
@@ -184,8 +149,8 @@ profit_profit <- profit_curves %>%
   select(-prices) %>%
   as.matrix()
 
-profit_prices <- data.matrix(seq(from = 1, to = 5, by = 0.01))
-profit_prices_c <- data.matrix(seq(from = 1, to = 5, by = 0.01))
+profit_prices <- data.matrix(seq(from = 0, to = 5, by = 0.01))
+profit_prices_c <- data.matrix(seq(from = 0, to = 5, by = 0.01))
 
 
 profit_maxing_prices <- profit_curves %>%
@@ -201,8 +166,8 @@ profit_maxing_prices <- profit_curves %>%
 
 profit_plot <- plot_ly() %>%
   add_trace(
-    x=seq(from = 1, to = 5, by = 0.01),
-    y=seq(from = 1, to = 5, by = 0.01),
+    x=seq(from = 0, to = 5, by = 0.01),
+    y=seq(from = 0, to = 5, by = 0.01),
     z=profit_profit,
     name='ZED',
     type='surface',
@@ -216,7 +181,14 @@ profit_plot <- plot_ly() %>%
     scene = list(
       xaxis = list(title='Competitor Price'),
       yaxis = list(title='Own Price'),
-      zaxis = list(title='Profit')
+      zaxis = list(title='Profit',
+      camera = list(
+        center = list(
+          x = 10,
+          y = 0,
+          z = 0
+        )
+      ))
     )) %>%
      # add_surface(z=~profit_maxing_prices)
   add_trace(
@@ -236,4 +208,27 @@ profit_plot <- plot_ly() %>%
 
 
 profit_plot
+
+
+#### Data output ####
+
+day_transactions <- sim_data[[5]] %>%
+  inner_join(profit_maxing_prices)
+
+
+write.csv(day_transactions,"day_transactions.csv",sep=",",dec=".")
+drive_upload(
+  "day_transactions.csv",
+  path="pricing_analytics/day_transactions",
+  type="spreadsheet",
+  overwrite = TRUE
+)
+
+write.csv(profit_maxing_prices,"profit_maxing_prices.csv",sep=",",dec=".")
+drive_upload(
+  "profit_maxing_prices.csv",
+  path="pricing_analytics/profit_maxing_prices",
+  type="spreadsheet",
+  overwrite=TRUE
+)
 
