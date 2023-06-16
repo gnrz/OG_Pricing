@@ -34,8 +34,8 @@ sim_data <- create_data(T=90,
                         n_per_day=1000,
                         mean_utility=0.5,
                         price_coefficient=-0.5,
-                        high_price=2,
-                        low_price=0.4, 
+                        high_price =c(2,6,6),
+                        low_price  =c(0.4,2,0.1), 
                         price_granularity=1,
                         sites=2)
 

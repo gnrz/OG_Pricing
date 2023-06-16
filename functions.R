@@ -43,7 +43,7 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
   }
 }
 
-create_data <- function(...,T=90,n_per_day=1000,mean_utility=0.5,price_coefficient=-0.5,high_price=2,low_price=0.4, price_granularity=1,sites=1) {
+create_data <- function(...,T=90,n_per_day=1000,mean_utility=0.5,price_coefficient=-0.5,high_price=c(2,6,6),low_price=c(0.4,1,0.1), price_granularity=1,sites=1) {
   
   n <- T * n_per_day * sites
   #print(n)
@@ -59,8 +59,11 @@ create_data <- function(...,T=90,n_per_day=1000,mean_utility=0.5,price_coefficie
                   ) %>%
             #rename(site_index=Var1, day_index=Var2) %>%
             mutate(
-                  prices = round(runif(nrow(.),low_price,high_price),digits=price_granularity)
-                  )
+                  prices = case_when(
+                    site_index %% 2==0 ~ round(runif(nrow(.),low_price[1],high_price[1]),digits=price_granularity),
+                    site_index %% 2!=0 ~ round(runif(nrow(.),low_price[2],high_price[2]),digits=price_granularity)
+                    )
+              )
   
   output[[1]] <- prices
   
@@ -71,7 +74,7 @@ create_data <- function(...,T=90,n_per_day=1000,mean_utility=0.5,price_coefficie
                         )
                       ) %>%
                       mutate(
-                          prices_c = round(runif(nrow(.),low_price,high_price),digits=price_granularity)
+                          prices_c = round(runif(nrow(.),low_price[3],high_price[3]),digits=price_granularity)
                         )
                       
   output[[2]] <- competitor_prices
@@ -89,10 +92,11 @@ create_data <- function(...,T=90,n_per_day=1000,mean_utility=0.5,price_coefficie
   
   output[[3]] <- df
   
-  true_elasticity <- (
-    pnorm(mean_utility + price_coefficient * high_price) - 
-      pnorm(mean_utility + price_coefficient * low_price)
-  )   / (high_price - low_price) * mean(df$prices)/mean(df$purchase_binary)
+  true_elasticity <- 0
+  #(
+  #  pnorm(mean_utility + price_coefficient * high_price) - 
+  #    pnorm(mean_utility + price_coefficient * low_price)
+  #)   / (high_price - low_price) * mean(df$prices)/mean(df$purchase_binary)
   
   output[[4]] <- true_elasticity
   
