@@ -12,9 +12,9 @@ library(googledrive)
 source("functions.R")
 #### Assumptions ####
 ## One product, 
-## only two different prices, 
-## one site, 
-## 1 competitors, 
+## Prices are drawn randomly from uniform distribution, Range is specified 
+## Multiple sites, identical except for pricing choices, 
+## 1 competitor per site, 
 ## no facilities, 
 ## no time of day, 
 ## everyone fills the same quantity, 
@@ -35,25 +35,45 @@ sim_data <- create_data(T=90,
                         mean_utility=0.5,
                         price_coefficient=-0.5,
                         high_price =c(2,6,6),
-                        low_price  =c(0.4,2,0.1), 
+                        low_price  =c(1,2,0.1), 
                         price_granularity=1,
-                        sites=2)
+                        sites=3,
+                        coffeemachine=c(0,0,1))
 
 
 
-ggplot(sim_data[[5]])+geom_point(mapping=aes(y=quantity,x=prices, group=site_index, color=site_index))
+ggplot(sim_data[[5]])+geom_point(mapping=aes(y=quantity,x=prices, group=as.character(site_index), color=as.character(site_index)))
+
+total_data <- sim_data[[5]] %>%
+  group_by(site_index) %>%
+  summarise(total_sales = sum(quantity), total_profit = sum(quantity*prices),mean_price=mean(prices))
 
 
-transactions <-       ggplot(sim_data[[5]],mapping=aes()) + geom_line(aes(x=day_index,y=quantity, group=site_index, color=site_index))
-prices_plot <-        ggplot(sim_data[[1]],mapping=aes()) + geom_line(aes(x=day_index, y=prices, group=site_index, color=site_index))
+transactions <-       ggplot(sim_data[[5]],mapping=aes()) + geom_line(aes(x=day_index,y=quantity, group=as.character(site_index), color=as.character(site_index))) +
+                      labs(color="Site Index",title="Quantity sold per day", x="Day", y="Quantity") + theme_minimal()
 
-print(transactions /  prices_plot)
+mean_price <-         ggplot(total_data,mapping=aes(x=site_index,y=mean_price)) + geom_col() +
+                      labs(title="Mean Price", x="Site", y="Price") + theme_minimal() + geom_text(aes(y=mean_price,label=round(mean_price,2)),vjust = 1.5, colour = "white")
+
+prices_plot <-        ggplot(sim_data[[1]],mapping=aes()) + geom_line(aes(x=day_index, y=prices, group=as.character(site_index), color=as.character(site_index))) +
+                      labs(color="Site Index",title="Daily prices", x="Day", y="Price") + theme_minimal()
+
+total_sales <-      ggplot(total_data,mapping=aes(x=site_index,y=total_sales)) + geom_col() +
+                     labs(title="Total Quantity Sold", x="Site", y="Quantity") + theme_minimal() + geom_text(aes(y=total_sales,label=total_sales),vjust = 1.5, colour = "white")
+
+profit_plot <-      ggplot(sim_data[[5]],mapping=aes()) + geom_line(aes(x=day_index,y=quantity*prices, group=as.character(site_index), color=as.character(site_index))) +
+                    labs(color="Site Index",title="Profit per day", x="Day", y="Profit") + theme_minimal()
+
+total_profit <-      ggplot(total_data,mapping=aes(x=site_index,y=total_profit)) + geom_col() +
+                    labs(title="Total Profit", x="Site", y="Profit") + theme_minimal() + geom_text(aes(y=total_profit,label=total_profit),vjust = 1.5, colour = "white")
+
+print(prices_plot / mean_price /  transactions / total_sales/ profit_plot / total_profit)
           
 
 ## Model 1: Observe Purchase Binary, OLS Model
 
 ols <- sim_data[[3]] %>% 
-  lm(purchase_binary ~ prices + prices_c,
+  lm(purchase_binary ~ prices + prices_c + coffeemachine,
      data = .) %>%
   summary()
 
@@ -64,7 +84,7 @@ ols_elasticity <- ols$coefficients[2] * mean(sim_data[[3]]$prices) / mean(sim_da
 ## Model 2: Observe Purchase Binary, Logit Model
 
 logit <- sim_data[[3]] %>%
-  glm(formula = purchase_binary ~ prices + prices_c,
+  glm(formula = purchase_binary ~ prices + prices_c + coffeemachine,
       family = binomial(link = 'logit'),
       data = .) %>%
   summary()
@@ -76,11 +96,20 @@ logit_elasticity <- logit$coefficients[2] * (1 - mean(sim_data[[3]]$purchase_bin
 ## Model 3: Observe Total Quantity
 
 quantity_model <- sim_data[[5]] %>% 
-  lm(quantity ~ prices + prices_c,
+  lm(quantity ~ prices + prices_c + coffeemachine,
      data = .) %>%
   summary()
 
 quantity_model
+
+quantity_model_coeffs <- data.frame(quantity_model$coefficients) %>%
+                          slice(2:n()) %>%
+                          mutate(Variables = rownames(.)) %>%
+                          ggplot(mapping=aes())+geom_col(aes(y=Estimate, x=Variables)) +
+                          theme_minimal() + 
+                          labs(title="Impact of different variables on quantity sold",y="Sales impact",subtitle="For prices, impact is based on single unit change in price")
+
+quantity_model_coeffs
 
 quantity_elasticity <- quantity_model$coefficients[2] * mean(sim_data[[5]]$prices) / mean(sim_data[[5]]$quantity)
 
@@ -95,25 +124,41 @@ data.frame(true = sim_data[[4]],
 #### Comparing Estimated Demand Curves, and the Implied Profit Functions & Optimal Prices ******WITH COMPETITOR**** ####
 
 demand_curves <- as.data.frame(expand.grid(seq(from = 0, to = 5, by = 0.01),
-                                           seq(from = 0, to = 5, by = 0.01))
+                                           seq(from = 0, to = 5, by = 0.01),
+                                           c(0,1))
                               ) %>%
-  dplyr::rename(prices=Var1,prices_c=Var2) %>%
-  mutate(quantity = quantity_model$coefficients[1] + quantity_model$coefficients[2]*prices + quantity_model$coefficients[3]*prices_c
+  dplyr::rename(prices=Var1,prices_c=Var2,coffeemachine=Var3) %>%
+  mutate(quantity = quantity_model$coefficients[1] + 
+                    quantity_model$coefficients[2]*prices + 
+                    quantity_model$coefficients[3]*prices_c + 
+                    quantity_model$coefficients[4]*coffeemachine
                ) 
 
-demand_quantity <- demand_curves %>%
+demand_quantity=c()
+
+demand_quantity[[1]] <- demand_curves %>%
+    filter(coffeemachine==0) %>%
     spread(prices_c,quantity) %>%
     select(-prices) %>%
     as.matrix()
 
+demand_quantity[[2]] <- demand_curves %>%
+  filter(coffeemachine==1) %>%
+  spread(prices_c,quantity) %>%
+  select(-prices) %>%
+  as.matrix()
+
+
 demand_prices <- data.matrix(seq(from = 1, to = 5, by = 0.01))
 demand_prices_c <- data.matrix(seq(from = 1, to = 5, by = 0.01))
 
-demand_plot <- plot_ly() %>%
+demand_plot=c()
+
+demand_plot[[1]] <- plot_ly() %>%
                 add_trace(
                     x=seq(from = 1, to = 5, by = 0.01),
                     y=seq(from = 1, to = 5, by = 0.01),
-                    z=demand_quantity,
+                    z=demand_quantity[[1]],
                     name='ZED',
                     type='surface',
                     colorbar=list(title='Quantity'),
@@ -130,14 +175,49 @@ demand_plot <- plot_ly() %>%
               xaxis = list(title='Competitor Price'),
               yaxis = list(title='Own Price'),
               zaxis = list(title='Quantity')
-            )
+            ),
+            title='Demand curve without coffee machine'
           )
+
+demand_plot[[2]] <- plot_ly() %>%
+  add_trace(
+    x=seq(from = 1, to = 5, by = 0.01),
+    y=seq(from = 1, to = 5, by = 0.01),
+    z=demand_quantity[[2]],
+    name='ZED',
+    type='surface',
+    colorbar=list(title='Quantity'),
+    contours=list(
+      
+      x=list(show=TRUE, color='#c4bebe'),
+      y=list(show=TRUE, color='#c4bebe')
+      
+      
+    )
+  ) %>%
+  layout(
+    scene = list(
+      xaxis = list(title='Competitor Price'),
+      yaxis = list(title='Own Price'),
+      zaxis = list(title='Quantity')
+    ),
+    title='Demand curve with coffee machine'
+  )
           
 
 
-demand_plot
+demand_plot[[1]]
+demand_plot[[2]]
+
+demand_withwithoutcoffee <- demand_curves %>%
+  filter(prices_c==3) %>% # hold competitor prices constant (assuming no interaction)
+  select(-prices_c) %>%
+  ggplot(mapping=aes()) + geom_line(aes(x=quantity, y=prices,group=as.character(coffeemachine), color=as.character(coffeemachine))) +
+    theme_minimal() +
+    labs(title="Demand with and without a coffee machine",x="Quantity Sold", y="Own Price",colour="Coffee machine")
 
 
+demand_withwithoutcoffee
 
 
 profit_curves <- demand_curves %>%

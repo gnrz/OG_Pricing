@@ -43,7 +43,18 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
   }
 }
 
-create_data <- function(...,T=90,n_per_day=1000,mean_utility=0.5,price_coefficient=-0.5,high_price=c(2,6,6),low_price=c(0.4,1,0.1), price_granularity=1,sites=1) {
+create_data <- function(...,
+                        T=90,
+                        n_per_day=1000,
+                        mean_utility=0.5,
+                        price_coefficient=-0.5,
+                        coffeemachine_coefficient=0.3,
+                        high_price=c(2,6,6),
+                        low_price=c(0.4,1,0.1), 
+                        price_granularity=1,
+                        sites=1,
+                        coffeemachine = c())
+      {
   
   n <- T * n_per_day * sites
   #print(n)
@@ -79,6 +90,11 @@ create_data <- function(...,T=90,n_per_day=1000,mean_utility=0.5,price_coefficie
                       
   output[[2]] <- competitor_prices
   
+  site_facilities <- data.frame(
+                          site_index=rep(seq(1,sites)),
+                          coffeemachine = coffeemachine
+                    )
+  
   df <- data.frame(
                   expand.grid(site_index=rep(seq(1,sites)), day_index=day_index), 
                    simulatedErrorProduct = rnorm(n = n),       # non_price utility from own product
@@ -86,7 +102,8 @@ create_data <- function(...,T=90,n_per_day=1000,mean_utility=0.5,price_coefficie
     #mutate(prices = c(rep(low_price, n / 2), rep(high_price, n / 2)),
         left_join(prices)%>%
         left_join(competitor_prices) %>%
-        mutate(utility_product = mean_utility + simulatedErrorProduct   + price_coefficient * prices,
+        left_join(site_facilities) %>%
+        mutate(utility_product = mean_utility + simulatedErrorProduct   + price_coefficient * prices + coffeemachine_coefficient * coffeemachine,
                utility_outside = mean_utility + simulatedErrorProduct_c + price_coefficient * prices_c,
                purchase_binary = (utility_product > utility_outside))
   
@@ -105,7 +122,9 @@ create_data <- function(...,T=90,n_per_day=1000,mean_utility=0.5,price_coefficie
     group_by(day_index,site_index) %>%
     summarise(quantity = sum(purchase_binary), 
               prices = mean(prices),
-              prices_c = mean(prices_c))
+              prices_c = mean(prices_c),
+              coffeemachine = mean(coffeemachine)
+              )
   
   output[[5]] <- df_by_day
   
