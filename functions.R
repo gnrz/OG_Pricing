@@ -49,16 +49,24 @@ create_data <- function(...,
                         mean_utility=0.5,
                         price_coefficient=-0.5,
                         coffeemachine_coefficient=0.3,
-                        high_price=c(2,6,6),
-                        low_price=c(0.4,1,0.1), 
+                       # high_price=c(2,6,6),
+                       # low_price=c(0.4,1,0.1), 
+                        sim_price_limits = data.frame(),
                         price_granularity=1,
-                        sites=1,
-                        coffeemachine = c())
+                        sites=3,
+                        coffeemachine = c(),
+                        profit_maxing=c(),
+                        pmax_prices = data.frame(prices_c=c(0),pmax_price=c(0)))
       {
   
   n <- T * n_per_day * sites
   #print(n)
   day_index <- sort(rep(seq(1,T), n_per_day))
+  
+  site_price_limits_df <- sim_price_limits %>%
+                        data.frame() %>%
+                        mutate(site_index = rep(seq(0,sites))) %>% # 0 site is competitors
+                        rename(high_price =X1, low_price = X2)
   
   output <- list()
   
@@ -68,12 +76,11 @@ create_data <- function(...,
                       day_index=rep(seq(1,T))
                       )
                   ) %>%
+            left_join(site_price_limits_df) %>%
             #rename(site_index=Var1, day_index=Var2) %>%
             mutate(
-                  prices = case_when(
-                    site_index %% 2==0 ~ round(runif(nrow(.),low_price[1],high_price[1]),digits=price_granularity),
-                    site_index %% 2!=0 ~ round(runif(nrow(.),low_price[2],high_price[2]),digits=price_granularity)
-                    )
+                  prices =  round(runif(nrow(.),low_price,high_price),digits=price_granularity)
+                    
               )
   
   output[[1]] <- prices
@@ -81,18 +88,22 @@ create_data <- function(...,
   competitor_prices <- data.frame(
                       expand.grid(
                         site_index=rep(seq(1,sites)),
-                        day_index=rep(seq(1,T))
+                        day_index=rep(seq(1,T)),
+                        site_index_comp = 0
                         )
-                      ) %>%
+                      ) %>% 
+                      inner_join(site_price_limits_df,by=c("site_index_comp"="site_index")) %>%
                       mutate(
-                          prices_c = round(runif(nrow(.),low_price[3],high_price[3]),digits=price_granularity)
-                        )
+                          prices_c = round(runif(nrow(.),low_price,high_price),digits=price_granularity)
+                        ) %>%
+                      select(-high_price,-low_price)
                       
   output[[2]] <- competitor_prices
   
   site_facilities <- data.frame(
                           site_index=rep(seq(1,sites)),
-                          coffeemachine = coffeemachine
+                          coffeemachine = coffeemachine,
+                          profit_maxing = profit_maxing
                     )
   
   df <- data.frame(
@@ -103,7 +114,15 @@ create_data <- function(...,
         left_join(prices)%>%
         left_join(competitor_prices) %>%
         left_join(site_facilities) %>%
-        mutate(utility_product = mean_utility + simulatedErrorProduct   + price_coefficient * prices + coffeemachine_coefficient * coffeemachine,
+        mutate(prices_c_join = as.character(round(prices_c,2))) %>%
+        left_join(pmax_prices,by=c("prices_c_join"="prices_c_join"), relationship="many-to-one",suffix = c(".x", ".y"),keep=TRUE) %>%
+        mutate(prices_c = prices_c.x) %>%
+        mutate(price_actual = 
+                  case_when(
+                    profit_maxing == 1 ~ pmax_price,
+                    profit_maxing == 0 ~ prices
+                  )) %>%
+        mutate(utility_product = mean_utility + simulatedErrorProduct   + price_coefficient * price_actual + coffeemachine_coefficient * coffeemachine,
                utility_outside = mean_utility + simulatedErrorProduct_c + price_coefficient * prices_c,
                purchase_binary = (utility_product > utility_outside))
   
@@ -121,7 +140,7 @@ create_data <- function(...,
   df_by_day <- df %>%
     group_by(day_index,site_index) %>%
     summarise(quantity = sum(purchase_binary), 
-              prices = mean(prices),
+              prices = mean(price_actual),
               prices_c = mean(prices_c),
               coffeemachine = mean(coffeemachine)
               )

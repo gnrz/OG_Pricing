@@ -30,15 +30,27 @@ source("functions.R")
 # Simulate data #
 set.seed(0)
 
+sim_price_limits <- data.frame(c(6,1), # First is competitors price range
+                               c(2,1),
+                               c(6,2),
+                               c(6,2)
+                               ) %>%
+                    t()
+
+
 sim_data <- create_data(T=90,
                         n_per_day=1000,
                         mean_utility=0.5,
                         price_coefficient=-0.5,
-                        high_price =c(2,6,6),
-                        low_price  =c(1,2,0.1), 
+                        #high_price =c(2,6,6),
+                        #low_price  =c(1,2,0.1), 
+                        sim_price_limits = sim_price_limits,
                         price_granularity=1,
                         sites=3,
-                        coffeemachine=c(0,0,1))
+                        coffeemachine=c(1,1,1),
+                        profit_maxing=c(1,1,1),
+                        pmax_prices=profit_maxing_prices
+                        )
 
 
 
@@ -48,6 +60,10 @@ total_data <- sim_data[[5]] %>%
   group_by(site_index) %>%
   summarise(total_sales = sum(quantity), total_profit = sum(quantity*prices),mean_price=mean(prices))
 
+price_summary <- sim_data[[3]] %>%
+  group_by(site_index, day_index) %>%
+  summarise(price = mean(price_actual))
+
 
 transactions <-       ggplot(sim_data[[5]],mapping=aes()) + geom_line(aes(x=day_index,y=quantity, group=as.character(site_index), color=as.character(site_index))) +
                       labs(color="Site Index",title="Quantity sold per day", x="Day", y="Quantity") + theme_minimal()
@@ -55,17 +71,17 @@ transactions <-       ggplot(sim_data[[5]],mapping=aes()) + geom_line(aes(x=day_
 mean_price <-         ggplot(total_data,mapping=aes(x=site_index,y=mean_price)) + geom_col() +
                       labs(title="Mean Price", x="Site", y="Price") + theme_minimal() + geom_text(aes(y=mean_price,label=round(mean_price,2)),vjust = 1.5, colour = "white")
 
-prices_plot <-        ggplot(sim_data[[1]],mapping=aes()) + geom_line(aes(x=day_index, y=prices, group=as.character(site_index), color=as.character(site_index))) +
+prices_plot <-        ggplot(price_summary,mapping=aes()) + geom_line(aes(x=day_index, y=price, group=as.character(site_index), color=as.character(site_index))) +
                       labs(color="Site Index",title="Daily prices", x="Day", y="Price") + theme_minimal()
 
 total_sales <-      ggplot(total_data,mapping=aes(x=site_index,y=total_sales)) + geom_col() +
-                     labs(title="Total Quantity Sold", x="Site", y="Quantity") + theme_minimal() + geom_text(aes(y=total_sales,label=total_sales),vjust = 1.5, colour = "white")
+                     labs(title="Total Quantity Sold", x="Site", y="Quantity") + theme_minimal() + geom_text(aes(y=total_sales,label=scales::comma(total_sales)),vjust = 1.5, colour = "white")
 
 profit_plot <-      ggplot(sim_data[[5]],mapping=aes()) + geom_line(aes(x=day_index,y=quantity*prices, group=as.character(site_index), color=as.character(site_index))) +
                     labs(color="Site Index",title="Profit per day", x="Day", y="Profit") + theme_minimal()
 
 total_profit <-      ggplot(total_data,mapping=aes(x=site_index,y=total_profit)) + geom_col() +
-                    labs(title="Total Profit", x="Site", y="Profit") + theme_minimal() + geom_text(aes(y=total_profit,label=total_profit),vjust = 1.5, colour = "white")
+                    labs(title="Total Profit", x="Site", y="Profit") + theme_minimal() + geom_text(aes(y=total_profit,label=scales::comma(total_profit)),vjust = 1.5, colour = "white")
 
 print(prices_plot / mean_price /  transactions / total_sales/ profit_plot / total_profit)
           
@@ -105,9 +121,14 @@ quantity_model
 quantity_model_coeffs <- data.frame(quantity_model$coefficients) %>%
                           slice(2:n()) %>%
                           mutate(Variables = rownames(.)) %>%
-                          ggplot(mapping=aes())+geom_col(aes(y=Estimate, x=Variables)) +
+                          ggplot(mapping=aes(y=Estimate, x=Variables))+geom_col(aes()) +
                           theme_minimal() + 
-                          labs(title="Impact of different variables on quantity sold",y="Sales impact",subtitle="For prices, impact is based on single unit change in price")
+                          labs(title="Impact of different variables on quantity sold",y="Sales impact",subtitle="For prices, impact is based on single unit change in price") +
+                          geom_text(aes(y=round(Estimate,0),
+                                        label=round(Estimate,0),
+                                        vjust = sign(Estimate) * 1.5 
+                                        ),
+                                    colour = "white")
 
 quantity_model_coeffs
 
@@ -123,8 +144,8 @@ data.frame(true = sim_data[[4]],
 
 #### Comparing Estimated Demand Curves, and the Implied Profit Functions & Optimal Prices ******WITH COMPETITOR**** ####
 
-demand_curves <- as.data.frame(expand.grid(seq(from = 0, to = 5, by = 0.01),
-                                           seq(from = 0, to = 5, by = 0.01),
+demand_curves <- as.data.frame(expand.grid(seq(from = 0, to = 6, by = 0.01),
+                                           seq(from = 0, to = 6, by = 0.01),
                                            c(0,1))
                               ) %>%
   dplyr::rename(prices=Var1,prices_c=Var2,coffeemachine=Var3) %>%
@@ -149,15 +170,15 @@ demand_quantity[[2]] <- demand_curves %>%
   as.matrix()
 
 
-demand_prices <- data.matrix(seq(from = 1, to = 5, by = 0.01))
-demand_prices_c <- data.matrix(seq(from = 1, to = 5, by = 0.01))
+demand_prices <- data.matrix(seq(from = 1, to = 6, by = 0.01))
+demand_prices_c <- data.matrix(seq(from = 1, to = 6, by = 0.01))
 
 demand_plot=c()
 
 demand_plot[[1]] <- plot_ly() %>%
                 add_trace(
-                    x=seq(from = 1, to = 5, by = 0.01),
-                    y=seq(from = 1, to = 5, by = 0.01),
+                    x=seq(from = 1, to = 6, by = 0.01),
+                    y=seq(from = 1, to = 6, by = 0.01),
                     z=demand_quantity[[1]],
                     name='ZED',
                     type='surface',
@@ -181,8 +202,8 @@ demand_plot[[1]] <- plot_ly() %>%
 
 demand_plot[[2]] <- plot_ly() %>%
   add_trace(
-    x=seq(from = 1, to = 5, by = 0.01),
-    y=seq(from = 1, to = 5, by = 0.01),
+    x=seq(from = 1, to = 6, by = 0.01),
+    y=seq(from = 1, to = 6, by = 0.01),
     z=demand_quantity[[2]],
     name='ZED',
     type='surface',
@@ -229,14 +250,15 @@ profit_profit <- profit_curves %>%
   select(-prices) %>%
   as.matrix()
 
-profit_prices <- data.matrix(seq(from = 0, to = 5, by = 0.01))
-profit_prices_c <- data.matrix(seq(from = 0, to = 5, by = 0.01))
+profit_prices <- data.matrix(seq(from = 0, to = 6, by = 0.01))
+profit_prices_c <- data.matrix(seq(from = 0, to = 6, by = 0.01))
 
 
 profit_maxing_prices <- profit_curves %>%
   select(-quantity) %>%
   group_by(prices_c) %>%
-  summarise(max_profit=max(profit), pmax_price=prices[which.max(profit)]) #%>%
+  summarise(max_profit=max(profit), pmax_price=prices[which.max(profit)]) %>%
+  mutate(prices_c_join = as.character(round(prices_c,2)))
  # mutate(id=1:n()) %>%
 #  spread(prices_c,max_profit) %>%
  # select(-pmax_price,-id) %>%
@@ -246,8 +268,8 @@ profit_maxing_prices <- profit_curves %>%
 
 profit_plot <- plot_ly() %>%
   add_trace(
-    x=seq(from = 0, to = 5, by = 0.01),
-    y=seq(from = 0, to = 5, by = 0.01),
+    x=seq(from = 0, to = 6, by = 0.01),
+    y=seq(from = 0, to = 6, by = 0.01),
     z=profit_profit,
     name='ZED',
     type='surface',
