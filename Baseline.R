@@ -52,38 +52,10 @@ sim_data <- create_data(T=90,
                         pmax_prices=profit_maxing_prices
                         )
 
-
+performance_comp(sim_data_3 = sim_data[[3]], sim_data_5=sim_data[[5]])
 
 ggplot(sim_data[[5]])+geom_point(mapping=aes(y=quantity,x=prices, group=as.character(site_index), color=as.character(site_index)))
 
-total_data <- sim_data[[5]] %>%
-  group_by(site_index) %>%
-  summarise(total_sales = sum(quantity), total_profit = sum(quantity*prices),mean_price=mean(prices))
-
-price_summary <- sim_data[[3]] %>%
-  group_by(site_index, day_index) %>%
-  summarise(price = mean(price_actual))
-
-
-transactions <-       ggplot(sim_data[[5]],mapping=aes()) + geom_line(aes(x=day_index,y=quantity, group=as.character(site_index), color=as.character(site_index))) +
-                      labs(color="Site Index",title="Quantity sold per day", x="Day", y="Quantity") + theme_minimal()
-
-mean_price <-         ggplot(total_data,mapping=aes(x=site_index,y=mean_price)) + geom_col() +
-                      labs(title="Mean Price", x="Site", y="Price") + theme_minimal() + geom_text(aes(y=mean_price,label=round(mean_price,2)),vjust = 1.5, colour = "white")
-
-prices_plot <-        ggplot(price_summary,mapping=aes()) + geom_line(aes(x=day_index, y=price, group=as.character(site_index), color=as.character(site_index))) +
-                      labs(color="Site Index",title="Daily prices", x="Day", y="Price") + theme_minimal()
-
-total_sales <-      ggplot(total_data,mapping=aes(x=site_index,y=total_sales)) + geom_col() +
-                     labs(title="Total Quantity Sold", x="Site", y="Quantity") + theme_minimal() + geom_text(aes(y=total_sales,label=scales::comma(total_sales)),vjust = 1.5, colour = "white")
-
-profit_plot <-      ggplot(sim_data[[5]],mapping=aes()) + geom_line(aes(x=day_index,y=quantity*prices, group=as.character(site_index), color=as.character(site_index))) +
-                    labs(color="Site Index",title="Profit per day", x="Day", y="Profit") + theme_minimal()
-
-total_profit <-      ggplot(total_data,mapping=aes(x=site_index,y=total_profit)) + geom_col() +
-                    labs(title="Total Profit", x="Site", y="Profit") + theme_minimal() + geom_text(aes(y=total_profit,label=scales::comma(total_profit)),vjust = 1.5, colour = "white")
-
-print(prices_plot / mean_price /  transactions / total_sales/ profit_plot / total_profit)
           
 
 ## Model 1: Observe Purchase Binary, OLS Model
